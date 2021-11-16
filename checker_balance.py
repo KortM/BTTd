@@ -1,3 +1,6 @@
+
+import os
+import subprocess
 import requests
 import bs4
 from schedule import every, repeat, run_pending
@@ -6,15 +9,16 @@ import datetime
 import colorama
 from colorama import Fore, Back, Style
 import schedule
+import json
 
 class TronChecker:
-    def __init__(self, cash_key=str, port=str):
+    def __init__(self, btfs_password:str, btfs_path:str):
         '''
             Конструктор класса принимает как аргументы адрес локального кошелька и порт для подключения. 
             Пример: http://127.0.0.1:5000/api/status?tTWMVh5ZjSVNRM9y4DsgANf
         '''
-        self.cash_key = cash_key
-        self.port = port
+        self.password = btfs_password
+        self.path = btfs_path
         colorama.init()
 
     def get_balance(self) -> None:
@@ -22,44 +26,38 @@ class TronChecker:
             Метод проверяет баланс BTT-разработчика на сети tron, если баланс > 500000 BTT, то выводим.
             Метод не возвращает ничего, только консольный вывод. 
         '''
+        
         print(datetime.datetime.now())
-        result = requests.get('https://apilist.tronscan.org/api/account?address=TA1EHWb1PymZ1qpBNfNj9uTaxd18ubrC7a')
-        amount_BTT = None
-        amount_BTT_convert = None
-        our_BTT = None
-        our_BTT_convert = None
-        for line in result.json()['tokenBalances']:
-            if line['tokenName'] == 'BitTorrent':
-                print(Fore.YELLOW + 'Текущий баналс разработчика BTT: {}.{}'.format(line["balance"][:-int(line["tokenDecimal"])], line['balance'][-int(line["tokenDecimal"]):]))
-                amount_BTT_convert = float('{}.{}'.format(line["balance"][:-int(line["tokenDecimal"])], line['balance'][-int(line["tokenDecimal"]):]))
-                amount_BTT = int(line['balance'])
         try:
-            result = requests.get('http://127.0.0.1:{}/api/status?t={}'.format(self.port,self.cash_key))
-            our_BTT_convert = int(result.json()['balance'])/1000000
-            our_BTT = int(result.json()['balance'])
-            print(Fore.GREEN + 'Баланс нашего кошелька: {} BTT'.format(our_BTT_convert))
+            result = requests.get('https://apilist.tronscan.org/api/account?address=TA1EHWb1PymZ1qpBNfNj9uTaxd18ubrC7a')
+            amount_BTT = None
+            amount_BTT_convert = None
+            our_BTT = None
+            our_BTT_convert = None
+            for line in result.json()['tokenBalances']:
+                if line['tokenName'] == 'BitTorrent':
+                    print(Fore.YELLOW + 'Текущий баналс разработчика BTT: {}.{}'.format(line["balance"][:-int(line["tokenDecimal"])], line['balance'][-int(line["tokenDecimal"]):]))
+                    amount_BTT_convert = float('{}.{}'.format(line["balance"][:-int(line["tokenDecimal"])], line['balance'][-int(line["tokenDecimal"]):]))
+                    amount_BTT = int(line['balance'])
+        except Exception as e:
+            print('Ошибка при получении баланса на TRON', e)
+        try:
+            result = subprocess.check_output('{} wallet balance'.format(os.path.normpath(self.path+'\\btfs.exe')))
+            our_BTT = json.loads(result.decode('utf-8'))['BtfsWalletBalance']
+            print(Fore.GREEN + 'Баланс нашего кошелька: {} BTT'.format(our_BTT))
             
-            '''
-                Необходимо поменять алгоритм вывода из локального кошелька на chain.
-                Торрент блокирует вывод через web-api             
-            '''
-
             if our_BTT > amount_BTT:
                 print(Fore.RED + 'Наш баланс > чем баланс разработчика. Вывода не будет, ждем пополнения')
             else:
-                if our_BTT_convert > 1000:
-                    print(Fore.GREEN + 'Баланс разработчика > чем наш баланс.\n Запускаем ввывод.')
-                    result = requests.post('http://127.0.0.1:{}/api/exchange/withdrawal?t={}&amount={}'.format(self.port, self.cash_key, our_BTT))
-                    if result.status_code == 200:
-                        result = requests.get('http://127.0.0.1:{}/api/status?t={}'.format(self.port, self.cash_key))
-                        our_BTT_convert = int(result.json()['balance'])/1000000
-                        print('Запрос на вывод размещен\n Наш текущий баланс: {}'.format(our_BTT_convert))
-                    else:
-                        print(Fore.RED + 'Что-то пошло не так! Возможно нет средств на балансе.')
+                if our_BTT > 1000:
+                    print(Fore.GREEN + 'Баланс разработчика < чем наш баланс.\n Запускаем ввывод.')
+                    res = subprocess.check_output('{} wallet withdraw {} -p {}'.format(os.path.normpath(self.path+'\\btfs.exe'), our_BTT, self.password))
+                    #res = subprocess.check_output(f'{os.path.normpath(self.path+"\\btfs.exe")} wallet withdraw {our_BTT} -p {self.password}')
+                    print(res.decode('utf-8'))
                 else:
                     print(Fore.LIGHTRED_EX + 'На балансе меньше 1000 BTT')
-        except Exception:
-            print(Fore.RED + 'Не удалось подключиться к локальному кошельку! При повторном запуске проверьте адрес/порт. ')
+        except Exception as e:
+            print(Fore.RED + 'Не удалось подключиться к локальному кошельку! При повторном запуске проверьте адрес/порт. ',e)
         print(Style.RESET_ALL)
 
     def task(self):
@@ -72,7 +70,7 @@ class TronChecker:
         
 
 if __name__ == '__main__':
-    key = input('Введите адрес кошёлька: ')
-    port = input('Введите порт: ')
-    t = TronChecker(key, port)
+    path = input('Введите путь к BTFS.exe: ')
+    key = input('Введите пароль от BTFS: ')
+    t = TronChecker(key, path)
     t.task()
